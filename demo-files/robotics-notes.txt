@@ -1,0 +1,1 @@
+The robotics team is designing a rover that can avoid obstacles, detect colored markers, and report temperature readings.
