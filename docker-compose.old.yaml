@@ -1,0 +1,47 @@
+services:
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.10.2
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      WEBUI_SECRET_KEY: change-this-demo-secret-key
+    volumes:
+      - openwebui:/app/backend/data
+    depends_on:
+      - ollama
+
+  mcpo:
+    image: ghcr.io/open-webui/mcpo:main
+    container_name: mcpo
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    command: >
+      --host 0.0.0.0
+      --port 8000
+      -- npx -y @modelcontextprotocol/server-filesystem /demo-files
+    volumes:
+      - ./demo-files:/demo-files:ro
+
+volumes:
+  ollama:
+  openwebui:
