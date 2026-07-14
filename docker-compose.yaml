@@ -1,47 +1,116 @@
+name: local-ai-platform
+
 services:
   ollama:
-    image: ollama/ollama
+    image: ollama/ollama:latest
     container_name: ollama
     restart: unless-stopped
-    ports:
-      - "11434:11434"
+
+    # Publish this only when host applications need direct Ollama access.
+    # ports:
+    #   - "11434:11434"
+
     volumes:
-      - ollama:/root/.ollama
+      - ollama-data:/root/.ollama
+
+    networks:
+      - ai-backend
+
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities:
+                - gpu
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "ollama list >/dev/null 2>&1 || exit 1"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+
+  mcp-filesystem:
+    image: ghcr.io/open-webui/mcpo:main
+    container_name: mcp-filesystem
+    restart: unless-stopped
+
+    # Publish for browser/UI administration and testing.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    environment:
+      MCPO_API_KEY: ${MCPO_API_KEY}
+
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--api-key"
+      - "${MCPO_API_KEY}"
+      - "--"
+      - "npx"
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem"
+      - "/demo-files"
+
+    volumes:
+      - ./demo-files:/demo-files:ro
+
+    networks:
+      - ai-backend
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/openapi.json')\" || exit 1"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.10.2
     container_name: open-webui
     restart: unless-stopped
+
     ports:
       - "3000:8080"
+
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
-      WEBUI_SECRET_KEY: change-this-demo-secret-key
-    volumes:
-      - openwebui:/app/backend/data
-    depends_on:
-      - ollama
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
 
-  mcpo:
-    image: ghcr.io/open-webui/mcpo:main
-    container_name: mcpo
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    command: >
-      --host 0.0.0.0
-      --port 8000
-      -- npx -y @modelcontextprotocol/server-filesystem /demo-files
     volumes:
-      - ./demo-files:/demo-files:ro
+      - openwebui-data:/app/backend/data
+
+    networks:
+      - ai-backend
+
+    depends_on:
+      ollama:
+        condition: service_healthy
+      mcp-filesystem:
+        condition: service_healthy
+
+
+networks:
+  ai-backend:
+    name: ai-backend
+    driver: bridge
+
 
 volumes:
-  ollama:
-  openwebui:
+  ollama-data:
+  openwebui-data:
